@@ -10,7 +10,7 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 const api = {
   get: (p) => fetch(p).then((r) => r.json()),
   put: (p, b) => fetch(p, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json()),
-  post: (p) => fetch(p, { method: "POST" }).then((r) => r.json()),
+  post: (p, b) => fetch(p, { method: "POST", headers: b ? { "Content-Type": "application/json" } : {}, body: b ? JSON.stringify(b) : undefined }).then((r) => r.json()),
 };
 
 // ---------------- state ----------------
@@ -23,6 +23,17 @@ const terms = new Map();   // local key -> { key, serverId, term, fit, wrap, ws,
 let live = [];             // last /api/agents/live snapshot (authoritative metadata)
 let activeId = null;       // serverId of the agent shown in the terminal
 let lastProj = localStorage.getItem("orch-last-proj") || null;
+
+// Sidebar layout is user-controlled (drag to reorder / group), not derived from
+// the project. Tree of items persisted in localStorage; agent ids are reconciled
+// against the live list on every render (new ones land at the root, dead ones drop).
+let layout = loadLayout();   // { items: ( {type:"agent",id} | {type:"group",id,name,collapsed,children:[...]} )[] }
+let dragData = null;         // { agentId } while dragging a row
+function loadLayout() {
+  try { const l = JSON.parse(localStorage.getItem("orch-layout") || ""); if (l && Array.isArray(l.items)) return l; } catch {}
+  return { items: [] };
+}
+const saveLayout = () => { try { localStorage.setItem("orch-layout", JSON.stringify(layout)); } catch {} };
 
 let sideHost, headHost, termHost, skipBox;
 
@@ -176,33 +187,58 @@ async function saveMeta(id, patch) {
   await api.put("/api/agents/meta?id=" + id, body).catch(() => {});
 }
 
+// ---- layout tree helpers (find / remove / reconcile against live agents) ----
+function findAgent(id) {
+  for (const it of layout.items) {
+    if (it.type === "agent" && it.id === id) return { list: layout.items, index: layout.items.indexOf(it), group: null };
+    if (it.type === "group") { const j = it.children.findIndex((c) => c.id === id); if (j >= 0) return { list: it.children, index: j, group: it }; }
+  }
+  return null;
+}
+function removeAgent(id) {
+  const loc = findAgent(id);
+  if (!loc) return null;
+  const [item] = loc.list.splice(loc.index, 1);
+  if (loc.group && loc.group.children.length === 0) { const gi = layout.items.indexOf(loc.group); if (gi >= 0) layout.items.splice(gi, 1); } // dissolve empty group
+  return item;
+}
+function reconcile(agentList) {
+  const ids = new Set(agentList.map((a) => a.id));
+  for (const it of layout.items) if (it.type === "group") it.children = it.children.filter((c) => ids.has(c.id));
+  layout.items = layout.items.filter((it) => (it.type === "agent" ? ids.has(it.id) : it.children.length > 0));
+  const have = new Set();
+  for (const it of layout.items) it.type === "agent" ? have.add(it.id) : it.children.forEach((c) => have.add(c.id));
+  for (const a of agentList) if (!have.has(a.id)) layout.items.push({ type: "agent", id: a.id });
+  saveLayout();
+}
+
 function renderSide() {
   if (!sideHost) return;
-  sideHost.innerHTML = "";
-  // agrupa por projeto, na ordem do registro de projetos
-  const groups = new Map();
-  for (const a of live) { if (!groups.has(a.projId)) groups.set(a.projId, []); groups.get(a.projId).push(a); }
-  // inclui o agente "pending" (ainda sem id no servidor) pra ele aparecer na hora
+  const metaList = [...live];
   const pendingRec = activeId && activeId.startsWith && activeId.startsWith("pending:") ? terms.get(activeId.slice(8)) : null;
-  if (pendingRec && !pendingRec.serverId) {
-    if (!groups.has(pendingRec.projId)) groups.set(pendingRec.projId, []);
-    groups.get(pendingRec.projId).push({ id: activeId, projId: pendingRec.projId, title: "iniciando…", name: "", tags: [], exited: false, pending: true });
+  if (pendingRec && !pendingRec.serverId)
+    metaList.push({ id: activeId, projId: pendingRec.projId, title: "iniciando…", name: "", tags: [], exited: false, pending: true });
+  reconcile(metaList);
+  const metaById = new Map(metaList.map((a) => [a.id, a]));
+  sideHost.innerHTML = "";
+  if (!layout.items.length) {
+    sideHost.appendChild(el("div", "orch-side-empty muted", 'Nenhuma sessão.<br>Clique <b>＋ Novo</b> para criar.<br><span class="orch-hint">Arraste sessões umas sobre as outras para agrupar.</span>'));
+    return;
   }
-  if (!groups.size) { sideHost.appendChild(el("div", "orch-side-empty muted", "Nenhum agente. Crie um acima.")); return; }
-  const order = projects.map((p) => p.id).filter((id) => groups.has(id));
-  for (const pid of order) {
-    const wrap = el("div", "orch-group");
-    wrap.appendChild(el("div", "orch-group-head", `<span class="pdot" style="background:${projColor(pid)}"></span><b>${esc(projName(pid))}</b><span class="orch-group-n">${groups.get(pid).length}</span>`));
-    for (const a of groups.get(pid)) wrap.appendChild(agentRow(a));
-    sideHost.appendChild(wrap);
+  for (const it of layout.items) {
+    if (it.type === "agent") { const a = metaById.get(it.id); if (a) sideHost.appendChild(agentRow(a)); }
+    else sideHost.appendChild(groupEl(it, metaById));
   }
 }
 
 function agentRow(a) {
   const active = a.id === activeId;
   const row = el("div", "orch-row" + (active ? " active" : "") + (a.exited ? " exited" : ""));
+  row.dataset.agent = a.id;
+  row.draggable = !a.pending;
   const label = a.name || a.title || "(sessão)";
   row.innerHTML = `
+    <span class="pdot" style="background:${projColor(a.projId)}" title="${esc(projName(a.projId))}"></span>
     <span class="orch-row-dot ${a.exited ? "" : "on"}"></span>
     <div class="orch-row-main">
       <div class="orch-row-name">${esc(label)}</div>
@@ -210,7 +246,109 @@ function agentRow(a) {
     </div>
     ${a.pending ? "" : `<button class="orch-row-x" title="encerrar">✕</button>`}`;
   row.onclick = (e) => { if (e.target.closest(".orch-row-x")) { killAgent(a.id); return; } if (!a.pending) select(a.id); };
+  if (!a.pending) attachRowDnd(row, a.id);
   return row;
+}
+
+function groupEl(g, metaById) {
+  const wrap = el("div", "orch-group" + (g.collapsed ? " collapsed" : ""));
+  wrap.dataset.group = g.id;
+  const head = el("div", "orch-group-head");
+  head.innerHTML = `
+    <span class="orch-group-caret">${g.collapsed ? "▸" : "▾"}</span>
+    <b class="orch-group-name">${esc(g.name || "Grupo")}</b>
+    <span class="orch-group-n">${g.children.length}</span>`;
+  head.onclick = (e) => { if (e.target.closest(".orch-group-name")) return; g.collapsed = !g.collapsed; saveLayout(); renderSide(); };
+  $(".orch-group-name", head).ondblclick = (e) => { e.stopPropagation(); renameGroup(g, $(".orch-group-name", head)); };
+  attachGroupDrop(head, g);
+  wrap.appendChild(head);
+  if (!g.collapsed) {
+    const body = el("div", "orch-group-body");
+    for (const c of g.children) { const a = metaById.get(c.id); if (a) body.appendChild(agentRow(a)); }
+    wrap.appendChild(body);
+  }
+  return wrap;
+}
+
+function renameGroup(g, nameEl) {
+  const inp = el("input", "orch-group-rename");
+  inp.value = g.name || "";
+  nameEl.replaceWith(inp);
+  inp.focus(); inp.select();
+  const commit = () => { g.name = inp.value.trim() || "Grupo"; saveLayout(); renderSide(); };
+  inp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape") renderSide(); };
+  inp.onblur = commit;
+}
+
+// ---- drag & drop: reorder freely, drop onto a row/header to group, drop on empty to ungroup ----
+const clearDropMarks = () => sideHost && sideHost.querySelectorAll(".drop-before,.drop-after,.drop-into").forEach((n) => n.classList.remove("drop-before", "drop-after", "drop-into"));
+
+function attachRowDnd(row, id) {
+  row.addEventListener("dragstart", (e) => { dragData = { agentId: id }; e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", id); } catch {} setTimeout(() => row.classList.add("dragging"), 0); });
+  row.addEventListener("dragend", () => { dragData = null; row.classList.remove("dragging"); clearDropMarks(); });
+  row.addEventListener("dragover", (e) => {
+    if (!dragData || dragData.agentId === id) return;
+    e.preventDefault();
+    const r = row.getBoundingClientRect(), rel = (e.clientY - r.top) / r.height;
+    clearDropMarks();
+    row.classList.add(rel < 0.28 ? "drop-before" : rel > 0.72 ? "drop-after" : "drop-into");
+  });
+  row.addEventListener("dragleave", () => row.classList.remove("drop-before", "drop-after", "drop-into"));
+  row.addEventListener("drop", (e) => {
+    if (!dragData || dragData.agentId === id) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = row.getBoundingClientRect(), rel = (e.clientY - r.top) / r.height, dragged = dragData.agentId;
+    if (rel >= 0.28 && rel <= 0.72) groupWith(id, dragged);
+    else moveNextTo(dragged, id, rel > 0.72);
+    clearDropMarks(); saveLayout(); renderSide();
+  });
+}
+
+function attachGroupDrop(head, g) {
+  head.addEventListener("dragover", (e) => { if (!dragData) return; e.preventDefault(); head.classList.add("drop-into"); });
+  head.addEventListener("dragleave", () => head.classList.remove("drop-into"));
+  head.addEventListener("drop", (e) => {
+    if (!dragData) return;
+    e.preventDefault(); e.stopPropagation();
+    const item = removeAgent(dragData.agentId);
+    if (item) g.children.push(item);
+    head.classList.remove("drop-into"); saveLayout(); renderSide();
+  });
+}
+
+function moveNextTo(draggedId, targetId, after) {
+  if (draggedId === targetId) return;
+  const item = removeAgent(draggedId);
+  if (!item) return;
+  const loc = findAgent(targetId);
+  if (!loc) { layout.items.push(item); return; }
+  loc.list.splice(loc.index + (after ? 1 : 0), 0, item);
+}
+
+function groupWith(targetId, draggedId) {
+  if (targetId === draggedId) return;
+  const item = removeAgent(draggedId);
+  if (!item) return;
+  const loc = findAgent(targetId);
+  if (!loc) { layout.items.push(item); return; }
+  if (loc.group) { loc.group.children.splice(loc.index + 1, 0, item); return; }
+  const targetItem = loc.list[loc.index];
+  const sameProj = metaProj(targetItem.id) && metaProj(targetItem.id) === metaProj(item.id);
+  const grp = { type: "group", id: "g" + Math.random().toString(36).slice(2, 8), name: sameProj ? projName(metaProj(targetItem.id)) : "Grupo", collapsed: false, children: [targetItem, item] };
+  loc.list.splice(loc.index, 1, grp);
+}
+const metaProj = (id) => { const a = live.find((x) => x.id === id); return a ? a.projId : null; };
+
+function setupSideDnd() {
+  if (!sideHost) return;
+  sideHost.addEventListener("dragover", (e) => { if (dragData) e.preventDefault(); });
+  sideHost.addEventListener("drop", (e) => {            // dropped on empty area → move to root (ungroup)
+    if (!dragData) return;
+    e.preventDefault();
+    const item = removeAgent(dragData.agentId);
+    if (item) layout.items.push(item);
+    saveLayout(); renderSide();
+  });
 }
 
 async function loadLive() {
@@ -227,14 +365,12 @@ async function boot() {
   let st = {}; try { st = await api.get("/api/settings"); } catch {}
 
   const root = $("#orch");
-  const projOpts = projects.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
   root.innerHTML = `
     <aside class="orch-side-col">
       <div class="orch-brand"><span class="orch-logo">✷</span> Orquestrador de Agentes</div>
       <div class="orch-new">
-        <select class="orch-proj-sel" title="projeto do novo agente">${projOpts}</select>
-        <button class="btn mini primary" data-new title="claude (sessão nova)">＋ Novo</button>
-        <button class="btn mini" data-cont title="claude --continue (retoma a última do projeto)">↻</button>
+        <button class="btn primary orch-new-btn" data-new-toggle title="iniciar uma nova sessão">＋ Novo</button>
+        <div class="orch-proj-menu" hidden></div>
       </div>
       <div class="orch-groups"></div>
       <label class="orch-skip" title="passa --dangerously-skip-permissions em toda sessão nova">
@@ -250,12 +386,68 @@ async function boot() {
   headHost = $(".orch-head", root);
   termHost = $(".orch-term", root);
   skipBox = $(".orch-skip-box", root);
+  setupSideDnd();
 
-  const sel = $(".orch-proj-sel", root);
-  sel.value = lastProj;
-  sel.onchange = () => { lastProj = sel.value; localStorage.setItem("orch-last-proj", sel.value); };
-  $("[data-new]", root).onclick = () => newAgent(sel.value, {});
-  $("[data-cont]", root).onclick = () => newAgent(sel.value, { cont: 1 });
+  const newBtn = $(".orch-new-btn", root);
+  const projMenu = $(".orch-proj-menu", root);
+  const closeMenu = () => { projMenu.hidden = true; newBtn.classList.remove("open"); };
+  const openMenu = () => { renderProjMenu(); projMenu.hidden = false; newBtn.classList.add("open"); };
+  newBtn.onclick = (e) => { e.stopPropagation(); projMenu.hidden ? openMenu() : closeMenu(); };
+
+  function renderProjMenu(adding = false) {
+    const rows = projects.map((p) => `
+      <div class="orch-proj-row" data-proj="${esc(p.id)}" title="nova sessão em ${esc(p.name)}">
+        <span class="pdot" style="background:${projColor(p.id)}"></span>
+        <span class="orch-proj-row-name">${esc(p.name)}</span>
+        <button class="orch-proj-cont" data-cont="${esc(p.id)}" title="retomar a última sessão (claude --continue)">↻</button>
+      </div>`).join("");
+    projMenu.innerHTML = `
+      ${rows || `<div class="orch-proj-empty muted">Nenhum projeto ainda.</div>`}
+      <div class="orch-proj-divider"></div>
+      ${adding ? `
+        <form class="orch-proj-form">
+          <input class="orch-proj-input" data-add-name placeholder="Nome do projeto" maxlength="40" autocomplete="off" />
+          <input class="orch-proj-input" data-add-root placeholder="Diretório (ex.: E:\\repos\\meu-app)" autocomplete="off" />
+          <div class="orch-proj-form-err"></div>
+          <div class="orch-proj-form-actions">
+            <button type="button" class="btn mini" data-add-cancel>Cancelar</button>
+            <button type="submit" class="btn mini primary" data-add-save>Adicionar</button>
+          </div>
+        </form>`
+        : `<div class="orch-proj-add" data-add-toggle>＋ Adicionar projeto…</div>`}`;
+    if (adding) {
+      const form = $(".orch-proj-form", projMenu);
+      const nameI = $("[data-add-name]", projMenu);
+      const rootI = $("[data-add-root]", projMenu);
+      const err = $(".orch-proj-form-err", projMenu);
+      nameI.focus();
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        err.textContent = "";
+        const save = $("[data-add-save]", projMenu);
+        save.disabled = true; save.textContent = "Adicionando…";
+        const r = await api.post("/api/projects", { name: nameI.value, root: rootI.value }).catch((x) => ({ ok: false, error: String(x) }));
+        if (!r.ok) { err.textContent = r.error || "falhou"; save.disabled = false; save.textContent = "Adicionar"; return; }
+        projects = await api.get("/api/projects").catch(() => projects);
+        for (const pr of projects) projById[pr.id] = pr;
+        closeMenu();
+        newAgent(r.project.id, {}); // já abre uma sessão no projeto recém-criado
+      };
+      $("[data-add-cancel]", projMenu).onclick = () => renderProjMenu(false);
+    }
+  }
+
+  projMenu.onclick = (e) => {
+    e.stopPropagation(); // cliques dentro do menu nunca fecham via "clique-fora" (re-render destaca o alvo)
+    if (e.target.closest(".orch-proj-form")) return; // não fecha enquanto digita
+    const cont = e.target.closest("[data-cont]");
+    if (cont) { closeMenu(); newAgent(cont.dataset.cont, { cont: 1 }); return; }
+    if (e.target.closest("[data-add-toggle]")) { renderProjMenu(true); return; }
+    const row = e.target.closest("[data-proj]");
+    if (row) { closeMenu(); newAgent(row.dataset.proj, {}); }
+  };
+  document.addEventListener("click", (e) => { if (!projMenu.hidden && !e.target.closest(".orch-new")) closeMenu(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
   skipBox.onchange = () => api.put("/api/settings", { skipPermissions: skipBox.checked }).catch(() => {});
 
   renderHead();

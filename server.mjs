@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import ptyLib from "node-pty";
 import { WebSocketServer } from "ws";
-import { PORT, HOST, PROJECTS, PROJECT_IDS } from "./config.js";
+import { PORT, HOST, PROJECTS, PROJECT_IDS, addProject } from "./config.js";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(ROOT, "data");
@@ -186,6 +186,13 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     if (p === "/api/projects" && req.method === "GET") return send(res, 200, projectsMeta());
+    if (p === "/api/projects" && req.method === "POST") {
+      try {
+        const b = JSON.parse(await readBody(req));
+        const proj = addProject({ name: b.name, root: b.root, color: b.color });
+        return send(res, 200, { ok: true, project: { id: proj.id, name: proj.name, color: proj.color } });
+      } catch (e) { return send(res, 200, { ok: false, error: String(e.message || e) }); }
+    }
 
     if (p === "/api/agents/live" && req.method === "GET") return send(res, 200, { agents: [...agents.values()].map(agentMeta) });
     if (p === "/api/agents/kill" && req.method === "POST") return send(res, 200, { ok: killAgent(url.searchParams.get("id")) });

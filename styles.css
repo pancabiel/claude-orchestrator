@@ -49,18 +49,59 @@ body {
 .orch-brand { display: flex; align-items: center; gap: 8px; padding: 14px 16px; font-weight: 700;
   font-size: 14px; border-bottom: 1px solid var(--border); }
 .orch-logo { color: var(--accent); }
-.orch-new { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
-.orch-proj-sel { flex: 1; background: var(--panel2); color: #d6deeb; border: 1px solid var(--border);
-  border-radius: 7px; padding: 5px 8px; font-size: 12px; }
+.orch-new { position: relative; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.orch-new-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.orch-new-btn.open { border-color: var(--accent); }
+.orch-proj-menu { position: absolute; left: 12px; right: 12px; top: calc(100% - 4px); z-index: 20;
+  background: var(--panel2); border: 1px solid var(--border2); border-radius: 9px; padding: 5px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45); }
+.orch-proj-menu[hidden] { display: none; }
+.orch-proj-empty { padding: 10px; font-size: 11.5px; text-align: center; }
+.orch-proj-row { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 7px;
+  cursor: pointer; border: 1px solid transparent; }
+.orch-proj-row:hover { background: rgba(56, 189, 248, 0.12); border-color: var(--accent); }
+.orch-proj-row-name { flex: 1; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.orch-proj-cont { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 13px;
+  opacity: 0; padding: 2px 6px; border-radius: 6px; flex: none; }
+.orch-proj-row:hover .orch-proj-cont { opacity: 1; }
+.orch-proj-cont:hover { color: var(--accent); background: var(--border); }
+.orch-proj-divider { height: 1px; background: var(--border); margin: 5px 4px; }
+.orch-proj-add { padding: 7px 9px; border-radius: 7px; cursor: pointer; font-size: 12px; color: var(--muted); }
+.orch-proj-add:hover { background: var(--panel); color: var(--text); }
+.orch-proj-form { display: flex; flex-direction: column; gap: 6px; padding: 4px; }
+.orch-proj-input { background: var(--panel); color: #e7eef7; border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; }
+.orch-proj-input:focus { outline: none; border-color: var(--accent); }
+.orch-proj-form-err { color: #fca5a5; font-size: 11px; min-height: 0; }
+.orch-proj-form-err:empty { display: none; }
+.orch-proj-form-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .orch-groups { flex: 1; overflow: auto; padding: 8px; }
 .orch-side-empty { padding: 16px; font-size: 12px; text-align: center; }
-.orch-group { margin-bottom: 12px; }
-.orch-group-head { display: flex; align-items: center; gap: 7px; padding: 4px 6px; font-size: 12px; color: var(--muted); }
-.orch-group-head b { color: inherit; font-size: 12px; }
+.orch-group { margin-bottom: 6px; border: 1px solid var(--border); border-radius: 9px;
+  background: rgba(255, 255, 255, 0.015); }
+.orch-group-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12px;
+  color: var(--muted); cursor: pointer; border-radius: 9px; }
+.orch-group-head:hover { background: var(--panel2); }
+.orch-group-head b { color: var(--text); font-size: 12px; font-weight: 600; }
+.orch-group-caret { color: var(--faint); font-size: 10px; width: 10px; flex: none; }
+.orch-group-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.orch-group-rename { flex: 1; background: var(--panel); color: #e7eef7; border: 1px solid var(--accent);
+  border-radius: 5px; padding: 2px 6px; font: inherit; font-size: 12px; min-width: 0; }
+.orch-group-rename:focus { outline: none; }
 .orch-group-n { margin-left: auto; font-size: 10px; color: var(--faint); background: var(--panel2);
   border-radius: 10px; padding: 1px 7px; }
-.orch-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px;
+.orch-group-body { padding: 2px 6px 6px; display: flex; flex-direction: column; gap: 1px; }
+.orch-group-head.drop-into { background: rgba(56, 189, 248, 0.18); box-shadow: inset 0 0 0 1px var(--accent); }
+.orch-row { position: relative; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px;
   cursor: pointer; border: 1px solid transparent; }
+.orch-row[draggable="true"]:active { cursor: grabbing; }
+.orch-row.dragging { opacity: .4; }
+.orch-row.drop-into { background: rgba(56, 189, 248, 0.18); border-color: var(--accent); }
+.orch-row.drop-before::before, .orch-row.drop-after::after { content: ""; position: absolute; left: 6px; right: 6px;
+  height: 2px; background: var(--accent); border-radius: 2px; }
+.orch-row.drop-before::before { top: -1px; }
+.orch-row.drop-after::after { bottom: -1px; }
+.orch-hint { display: block; margin-top: 10px; font-size: 11px; color: var(--faint); }
 .orch-row:hover { background: var(--panel2); }
 .orch-row.active { background: rgba(56, 189, 248, 0.12); border-color: var(--accent); }
 .orch-row.exited { opacity: .55; }
