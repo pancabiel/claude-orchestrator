@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Orquestrador de Agentes</title>
+    <link rel="icon" href="/icon.ico" type="image/x-icon" />
+    <link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="orch-body">
+    <div id="orch"></div>
+
+    <!-- xterm.js (UMD globals: Terminal, FitAddon) -->
+    <script src="/node_modules/@xterm/xterm/lib/xterm.js"></script>
+    <script src="/node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+    <script type="module" src="/orchestrator.js"></script>
+  </body>
+</html>

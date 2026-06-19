@@ -1,0 +1,16 @@
+{
+  "name": "claude-orchestrator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local, full-screen orchestrator for multiple interactive Claude Code sessions — sessions grouped by project, named, tagged, each a real terminal in its own window.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "node-pty": "^1.0.0",
+    "ws": "^8.18.0",
+    "@xterm/xterm": "^5.5.0",
+    "@xterm/addon-fit": "^0.10.0"
+  }
+}

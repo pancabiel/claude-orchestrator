@@ -1,0 +1,8 @@
+# npm deps (node-pty, ws, xterm) — reinstall with `npm install`
+node_modules/
+
+# Machine-specific project registry (paths to your repos) — keep it off git.
+projects.json
+
+# Local runtime settings (e.g. skip-permissions toggle)
+data/

@@ -1,0 +1,4 @@
+[
+  { "id": "exemplo", "name": "Meu Projeto", "color": "#38bdf8", "root": "C:\\caminho\\para\\o\\projeto" },
+  { "id": "api", "name": "API", "color": "#34d399", "root": "C:\\caminho\\para\\a\\api" }
+]
