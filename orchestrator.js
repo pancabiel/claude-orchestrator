@@ -7,6 +7,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+const showOverlay = (msg) => { const o = el("div", "orch-overlay", `<div class="orch-overlay-box"><span class="orch-spin"></span>${esc(msg)}</div>`); document.body.appendChild(o); return o; };
 const api = {
   get: (p) => fetch(p).then((r) => r.json()),
   put: (p, b) => fetch(p, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json()),
@@ -72,6 +73,11 @@ function connect(rec, opts = {}) {
       rec.serverId = m.id; rec.exited = !!m.exited; rec._pendingActive = false;
       if (activeId == null || activeId === "pending:" + rec.key) activeId = m.id;
       loadLive(); renderHead(); mount();
+    }
+    else if (m.t === "meta") {                 // server pushed an updated name (e.g. auto-named from first prompt)
+      const a = live.find((x) => x.id === m.id);
+      if (a && typeof m.name === "string") { a.name = m.name; renderSide(); if (activeId === m.id) renderHead(); }
+      else loadLive();                         // snapshot not warm yet — pull fresh state (also re-renders)
     }
     else if (m.t === "exit") { rec.exited = true; rec.term.write(`\r\n\x1b[90m— sessão encerrada (código ${m.code}) —\x1b[0m\r\n`); loadLive(); }
     else if (m.t === "error") { rec.term.write(`\r\n\x1b[31m⚠ ${m.error}\x1b[0m\r\n`); rec.exited = true; }
@@ -239,7 +245,6 @@ function agentRow(a) {
   const label = a.name || a.title || "(sessão)";
   row.innerHTML = `
     <span class="pdot" style="background:${projColor(a.projId)}" title="${esc(projName(a.projId))}"></span>
-    <span class="orch-row-dot ${a.exited ? "" : "on"}"></span>
     <div class="orch-row-main">
       <div class="orch-row-name">${esc(label)}</div>
       ${(a.tags || []).length ? `<div class="orch-row-tags">${a.tags.map((t) => `<span class="orch-tag-sm">${esc(t)}</span>`).join("")}</div>` : ""}
@@ -367,7 +372,13 @@ async function boot() {
   const root = $("#orch");
   root.innerHTML = `
     <aside class="orch-side-col">
-      <div class="orch-brand"><span class="orch-logo">✷</span> Orquestrador de Agentes</div>
+      <div class="orch-brand">
+        <button class="orch-menu-btn" data-menu-toggle title="Menu" aria-label="Menu">☰</button>
+        <img class="orch-logo" src="/icon.png" alt="" /> Orquestrador de Agentes
+        <div class="orch-menu" hidden>
+          <div class="orch-menu-item" data-restart>↻ Reiniciar orquestrador</div>
+        </div>
+      </div>
       <div class="orch-new">
         <button class="btn primary orch-new-btn" data-new-toggle title="iniciar uma nova sessão">＋ Novo</button>
         <div class="orch-proj-menu" hidden></div>
@@ -387,6 +398,20 @@ async function boot() {
   termHost = $(".orch-term", root);
   skipBox = $(".orch-skip-box", root);
   setupSideDnd();
+
+  // hamburger menu (top-left): por enquanto só "Reiniciar orquestrador"
+  const menuBtn = $("[data-menu-toggle]", root);
+  const menu = $(".orch-menu", root);
+  const closeAppMenu = () => { menu.hidden = true; menuBtn.classList.remove("open"); };
+  menuBtn.onclick = (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; menuBtn.classList.toggle("open", !menu.hidden); };
+  $("[data-restart]", menu).onclick = async () => {
+    closeAppMenu();
+    showOverlay("Reiniciando orquestrador…");
+    await api.post("/api/restart").catch(() => {}); // a conexão cai durante o restart
+    setTimeout(() => location.reload(), 2500);       // recarrega quando o servidor voltar
+  };
+  document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest(".orch-brand")) closeAppMenu(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAppMenu(); });
 
   const newBtn = $(".orch-new-btn", root);
   const projMenu = $(".orch-proj-menu", root);

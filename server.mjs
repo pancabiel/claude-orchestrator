@@ -85,6 +85,8 @@ function createAgent(projId, { resume, cont, cols = 80, rows = 24 } = {}) {
     id, projId, projName: p.name, title: `${p.name} · ${hhmm}`, name: "", tags: [],
     cmd: ["claude", ...claudeArgs].join(" "), createdAt: Date.now(),
     cols, rows, buffer: "", exited: false, exitCode: null, pty: term, sockets: new Set(),
+    // First-prompt auto-naming: accumulate typed keystrokes until Enter, then name the session.
+    typed: "", named: false,
   };
   term.onData((d) => {
     agent.buffer += d;
@@ -135,6 +137,61 @@ function openAppWindow(path) {
   return { ok: true, browser: basename(exe) };
 }
 
+// Relaunch the Node server: spawn a detached launcher that waits for this process
+// to release the port, starts a fresh server, then we exit. The browser reconnects.
+function restartServer() {
+  const cmd = `Start-Sleep -Milliseconds 800; Start-Process -FilePath '${process.execPath}' -ArgumentList '"${join(ROOT, "server.mjs")}"' -WorkingDirectory '${ROOT}' -WindowStyle Hidden`;
+  spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", cmd], { detached: true, stdio: "ignore" }).unref();
+  setTimeout(() => process.exit(0), 250);
+}
+
+// Condense a first prompt into a short, label-like name: the first few words rather
+// than the whole sentence. No LLM — just a heuristic (keep it offline/dependency-light).
+function summarizeLine(line) {
+  const MAX_WORDS = 6, MAX_CHARS = 40;
+  const words = line.split(" ");
+  let name = words.slice(0, MAX_WORDS).join(" ");
+  if (name.length > MAX_CHARS) {                  // over the cap: back off to the last whole word
+    name = name.slice(0, MAX_CHARS);
+    const sp = name.lastIndexOf(" ");
+    name = (sp > 0 ? name.slice(0, sp) : name).trim();
+  }
+  if (name.length < line.length) name += "…";
+  return name;
+}
+
+// Auto-name a fresh session from its first submitted prompt. We can't read claude's
+// input box, so we reconstruct what the user typed from the raw keystroke stream:
+// accumulate printable chars, honor backspace, skip escape sequences (arrows, paste
+// markers, …), and commit on Enter. Stops after the first non-empty line is captured.
+function captureFirstPrompt(agent, d) {
+  if (agent.named || agent.name) return;
+  let buf = agent.typed;
+  for (let i = 0; i < d.length; i++) {
+    const ch = d[i], code = d.charCodeAt(i);
+    if (ch === "\x1b") {                       // skip an ANSI/escape sequence (incl. bracketed-paste markers)
+      let j = i + 1;
+      if (d[j] === "[" || d[j] === "O") { j++; while (j < d.length && !/[A-Za-z~]/.test(d[j])) j++; }
+      i = j;
+      continue;
+    }
+    if (code === 13 || code === 10) {          // Enter → commit the line if it has content
+      const line = buf.replace(/\s+/g, " ").trim();
+      if (line) {
+        agent.name = summarizeLine(line); agent.named = true; agent.typed = "";
+        for (const ws of agent.sockets) safeSend(ws, { t: "meta", id: agent.id, name: agent.name });
+        return;
+      }
+      buf = "";                                // blank Enter: reset and keep waiting
+      continue;
+    }
+    if (code === 127 || code === 8) { buf = buf.slice(0, -1); continue; } // backspace/del
+    if (code < 32) continue;                   // other control chars (Ctrl-C, Tab, …) — ignore
+    buf += ch;
+  }
+  agent.typed = buf;
+}
+
 // WebSocket: attach to an existing agent (?agent=id) or create a new one
 // (?project=id[&cont=1|&resume=sid][&cols=&rows=]). Frames:
 //   client → { t:"in", d } | { t:"resize", cols, rows }
@@ -162,7 +219,7 @@ function handleTerm(ws, url) {
   ws.on("message", (raw) => {
     let m; try { m = JSON.parse(raw.toString()); } catch { return; }
     if (agent.exited) return;
-    if (m.t === "in" && typeof m.d === "string") { try { agent.pty.write(m.d); } catch {} }
+    if (m.t === "in" && typeof m.d === "string") { try { agent.pty.write(m.d); } catch {} captureFirstPrompt(agent, m.d); }
     else if (m.t === "resize") {
       const c = Math.max(2, m.cols | 0), r = Math.max(1, m.rows | 0);
       agent.cols = c; agent.rows = r; try { agent.pty.resize(c, r); } catch {}
@@ -201,7 +258,7 @@ const server = http.createServer(async (req, res) => {
       if (!a) return send(res, 200, { ok: false, error: "agente não existe" });
       try {
         const b = JSON.parse(await readBody(req));
-        if (typeof b.name === "string") a.name = b.name.slice(0, 80);
+        if (typeof b.name === "string") { a.name = b.name.slice(0, 80); a.named = true; }
         if (Array.isArray(b.tags)) a.tags = b.tags.map((t) => String(t).slice(0, 24)).filter(Boolean).slice(0, 12);
         return send(res, 200, { ok: true, agent: agentMeta(a) });
       } catch (e) { return send(res, 200, { ok: false, error: String(e.message || e) }); }
@@ -209,6 +266,11 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/agents/open-window" && req.method === "POST") {
       try { return send(res, 200, openAppWindow("/")); }
       catch (e) { return send(res, 200, { ok: false, error: String(e.message || e) }); }
+    }
+    if (p === "/api/restart" && req.method === "POST") {
+      send(res, 200, { ok: true });
+      console.log("\n  ↻ reiniciando orquestrador…\n");
+      return restartServer();
     }
 
     if (p === "/api/settings" && req.method === "GET") return send(res, 200, settings);
