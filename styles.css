@@ -36,7 +36,11 @@ body {
 .pdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
 
 /* shared terminal wrapper */
-.term-wrap { flex: 1; min-height: 0; padding: 6px 4px 4px 8px; }
+/* content-box so FitAddon reads the real inner size: it subtracts padding from the
+   xterm element (which has none) and takes this wrap's getComputedStyle width/height —
+   under the global border-box that value includes the padding, so the grid overran the
+   viewport on the right (behind the scrollbar) and bottom. */
+.term-wrap { flex: 1; min-width: 0; min-height: 0; padding: 6px 4px 4px 8px; box-sizing: content-box; overflow: hidden; }
 .term-wrap .xterm, .term-wrap .xterm-viewport { height: 100% !important; }
 .term-wrap .xterm-viewport::-webkit-scrollbar { width: 10px; }
 .term-wrap .xterm-viewport::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 6px; }
@@ -69,19 +73,68 @@ body {
 .orch-new { position: relative; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .orch-new-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; }
 .orch-new-btn.open { border-color: var(--accent); }
+.orch-new-row { display: flex; gap: 6px; }
+.orch-new-row .orch-new-btn { flex: 1; }
+.orch-task-btn { white-space: nowrap; flex: 0 0 auto; }
+
+/* ✨ Tarefa — depth-aware new-session composer (modal) */
+.orch-modal-back { position: fixed; inset: 0; z-index: 110; display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 11, 16, 0.72); backdrop-filter: blur(2px); }
+.orch-modal { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--border2); border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55); }
+.orch-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px;
+  border-bottom: 1px solid var(--border); font-size: 15px; }
+.orch-modal-x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 4px 6px; border-radius: 6px; }
+.orch-modal-x:hover { background: var(--panel2); color: var(--text); }
+.orch-modal-body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.orch-f-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-top: 10px; }
+.orch-f-label:first-child { margin-top: 0; }
+.orch-f-chips, .orch-f-depths { display: flex; flex-wrap: wrap; gap: 7px; }
+.orch-f-projs { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.orch-f-group { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin-top: 4px; }
+.orch-f-group:first-child { margin-top: 0; }
+.orch-f-chip, .orch-f-depth { display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  background: var(--panel2); border: 1px solid var(--border2); color: var(--text); padding: 7px 12px; border-radius: 999px; font: inherit; }
+.orch-f-depth { border-radius: 8px; }
+.orch-f-chip:hover, .orch-f-depth:hover { border-color: var(--accent); }
+.orch-f-chip.on, .orch-f-depth.on { border-color: var(--accent); background: rgba(56, 189, 248, 0.14); color: #e6f6ff; }
+.orch-f-hint { color: var(--muted); font-size: 12px; min-height: 16px; }
+.orch-f-card { display: flex; align-items: center; gap: 9px; margin-top: 12px; cursor: pointer; }
+.orch-f-card.disabled { cursor: default; color: var(--muted); }
+.orch-f-card input { width: 17px; height: 17px; accent-color: var(--accent); }
+.orch-f-intent { width: 100%; background: var(--bg2); border: 1px solid var(--border2); color: var(--text); border-radius: 9px;
+  padding: 11px; font: inherit; resize: vertical; min-height: 96px; }
+.orch-f-intent:focus { outline: none; border-color: var(--accent); }
+.orch-f-err { color: #fca5a5; font-size: 12px; min-height: 14px; }
+.orch-modal.narrow { width: min(420px, calc(100vw - 32px)); }
+.orch-f-select { width: 100%; background: var(--bg2); border: 1px solid var(--border2); color: var(--text);
+  border-radius: 9px; padding: 9px 10px; font: inherit; }
+.orch-f-select:focus { outline: none; border-color: var(--accent); }
+.orch-f-range { width: 100%; accent-color: var(--accent); }
+.orch-modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px; border-top: 1px solid var(--border); }
 .orch-proj-menu { position: absolute; left: 12px; right: 12px; top: calc(100% - 4px); z-index: 20;
   background: var(--panel2); border: 1px solid var(--border2); border-radius: 9px; padding: 5px;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45); }
 .orch-proj-menu[hidden] { display: none; }
+.orch-proj-list { max-height: min(60vh, 460px); overflow-y: auto; }
+.orch-proj-group { padding: 8px 9px 3px; font-size: 10px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--faint); }
+.orch-proj-group:first-child { padding-top: 3px; }
 .orch-proj-empty { padding: 10px; font-size: 11.5px; text-align: center; }
 .orch-proj-row { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 7px;
   cursor: pointer; border: 1px solid transparent; }
 .orch-proj-row:hover { background: rgba(56, 189, 248, 0.12); border-color: var(--accent); }
 .orch-proj-row-name { flex: 1; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.orch-proj-cont { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 13px;
+.orch-proj-edit { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 13px;
   opacity: 0; padding: 2px 6px; border-radius: 6px; flex: none; }
-.orch-proj-row:hover .orch-proj-cont { opacity: 1; }
-.orch-proj-cont:hover { color: var(--accent); background: var(--border); }
+.orch-proj-row:hover .orch-proj-edit { opacity: 1; }
+.orch-proj-edit:hover { color: var(--accent); background: var(--border); }
+.orch-proj-del { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 12px;
+  opacity: 0; padding: 2px 6px; border-radius: 6px; flex: none; }
+.orch-proj-row:hover .orch-proj-del { opacity: 1; }
+.orch-proj-del:hover { color: #fca5a5; background: var(--border); }
+.orch-proj-row.confirm { cursor: default; gap: 6px; }
+.orch-proj-row.confirm:hover { background: none; border-color: transparent; }
 .orch-proj-divider { height: 1px; background: var(--border); margin: 5px 4px; }
 .orch-proj-add { padding: 7px 9px; border-radius: 7px; cursor: pointer; font-size: 12px; color: var(--muted); }
 .orch-proj-add:hover { background: var(--panel); color: var(--text); }
@@ -91,6 +144,11 @@ body {
 .orch-proj-input:focus { outline: none; border-color: var(--accent); }
 .orch-proj-form-err { color: #fca5a5; font-size: 11px; min-height: 0; }
 .orch-proj-form-err:empty { display: none; }
+.orch-proj-form-line { display: flex; gap: 6px; align-items: center; }
+.orch-proj-form-line .orch-proj-input { flex: 1; min-width: 0; }
+.orch-proj-color { width: 30px; height: 30px; padding: 2px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--panel); cursor: pointer; flex: none; }
+.orch-proj-list .orch-proj-form { margin: 2px 0; border: 1px solid var(--accent); border-radius: 8px; }
 .orch-proj-form-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .orch-groups { flex: 1; overflow: auto; padding: 8px; }
 .orch-side-empty { padding: 16px; font-size: 12px; text-align: center; }
@@ -107,6 +165,10 @@ body {
 .orch-group-rename:focus { outline: none; }
 .orch-group-n { margin-left: auto; font-size: 10px; color: var(--faint); background: var(--panel2);
   border-radius: 10px; padding: 1px 7px; }
+.orch-group-add { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 12px;
+  opacity: 0; padding: 2px 4px; border-radius: 5px; flex: none; }
+.orch-group-head:hover .orch-group-add { opacity: 1; }
+.orch-group-add:hover { color: var(--accent); background: var(--border); }
 .orch-group-body { padding: 2px 6px 6px; display: flex; flex-direction: column; gap: 1px; }
 .orch-group-head.drop-into { background: rgba(56, 189, 248, 0.18); box-shadow: inset 0 0 0 1px var(--accent); }
 .orch-row { position: relative; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px;
@@ -130,14 +192,23 @@ body {
   opacity: 0; padding: 2px 4px; border-radius: 5px; }
 .orch-row:hover .orch-row-x { opacity: 1; }
 .orch-row-x:hover { color: #f87171; background: var(--border); }
-.orch-skip { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--border);
-  font-size: 11.5px; color: var(--muted); cursor: pointer; }
-.orch-skip-warn { color: #fbbf24; }
+.orch-perm { display: flex; flex-direction: column; gap: 6px; padding: 11px 14px; border-top: 1px solid var(--border);
+  font-size: 11.5px; color: var(--muted); }
+.orch-perm-label { font-weight: 600; }
+.orch-perm-sel { width: 100%; padding: 6px 8px; font-size: 12px; color: var(--text); cursor: pointer;
+  background: var(--panel2); border: 1px solid var(--border2); border-radius: 7px; }
+.orch-perm-sel:hover { border-color: var(--accent); }
+.orch-perm-sel.danger { color: #fbbf24; border-color: rgba(251, 191, 36, 0.5); }
 .orch-main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #0b0f14; }
 .orch-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; min-height: 30px;
   background: var(--panel); border-bottom: 1px solid var(--border); }
 .orch-head-empty { font-size: 12px; }
 .orch-head-proj { font-size: 12px; color: var(--muted); }
+/* 🔊 na linha lateral: a sessão respondeu enquanto você estava em outra */
+.orch-row-say { font-size: 11px; opacity: .85; flex: none; }
+/* sessão restaurada de um restart: continua ali, só sem processo até você abrir */
+.orch-row-sleep { font-size: 11px; opacity: .85; flex: none; }
+.orch-row.dormant .orch-row-name { opacity: .7; }
 .orch-name { background: var(--panel2); color: #e7eef7; border: 1px solid var(--border); border-radius: 7px;
   padding: 5px 9px; font-size: 13px; min-width: 220px; }
 .orch-name:focus { border-color: var(--accent); outline: none; }
@@ -150,5 +221,5 @@ body {
   padding: 2px 8px; font-size: 11px; color: var(--muted); }
 .orch-tag-add:focus { outline: none; border-color: var(--accent); color: #e7eef7; }
 .orch-exited { font-size: 11px; }
-.orch-term { flex: 1; min-height: 0; display: flex; }
+.orch-term { flex: 1; min-width: 0; min-height: 0; display: flex; }
 .orch-empty { margin: auto; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.6; }

@@ -49,20 +49,48 @@ Override the port with the `ORCH_PORT` env var.
 - **＋ Novo** — start a fresh `claude` in the selected project. **↻** — `claude --continue` (resume the project's last session).
 - Click a session in the sidebar to focus its terminal. Hover a row → **✕** to end it.
 - In the header: rename the session and add **tags** (type + Enter; ✕ to remove).
-- Footer toggle **"Pular permissões nas novas sessões ⚠"** → starts every **new** session with
-  `--dangerously-skip-permissions`. Off by default; the choice is saved to `data/settings.json`.
+- Footer selector **"Permissões nas novas sessões"** → how every **new** session starts:
+  *Perguntar* (default, asks normally), *Auto* (`--permission-mode auto`), *Aceitar edições*
+  (`--permission-mode acceptEdits`), or *Pular permissões ⚠* (`--dangerously-skip-permissions`).
+  The choice is saved to `data/settings.json`.
 - Sessions survive a page reload (the server keeps the terminal alive and repaints recent output on reattach).
+- **▶ Ouvir / 🔊** — read Claude's last answer out loud (browser speech synthesis, pt-BR).
+  🔊 speaks every answer of the focused session as it lands. Needs the hook below.
+
+## Hearing the answers (▶)
+
+The terminal is a TUI, so the spoken text does **not** come from the screen — a `Stop`
+hook reads the session transcript and posts the final answer to the orchestrator.
+Add this to `~/.claude/settings.json` (or a project's `.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command",
+      "command": "node \"E:\\repos\\claude-orchestrator\\hooks\\orch-say.mjs\"" }] }]
+  }
+}
+```
+
+Troubleshooting: run with `ORCH_SAY_LOG=<file>` in the environment and the hook records
+every firing (it is silent by design).
+
+The hook exits immediately when `ORCH_AGENT_ID` is not set, so sessions started outside
+the orchestrator are unaffected. Without it everything else still works — only ▶ stays
+greyed out. Voice quality is whatever pt-BR voice the OS ships; `speech.js` keeps the
+engine behind `speak()`/`setEngine()` so an HTTP TTS can replace it later.
 
 ## API (local only, `127.0.0.1`)
 
 | Method + path | What |
 |---|---|
-| `GET /api/projects` | `[{id,name,color}]` for the UI. |
+| `GET·POST·DELETE /api/projects` | List `[{id,name,color}]`; add `{name,root}`; remove `?id=` (registry only — live agents untouched). |
 | `GET /api/agents/live` | List live agents (`{id,projId,name,tags,cmd,exited,…}`). |
 | `POST /api/agents/kill?id=` | End an agent. |
 | `PUT /api/agents/meta?id=` | Body `{name,tags[]}` — rename / tag a session. |
+| `GET·POST /api/agents/say?id=` | Last answer of an agent (`{text,at}`); POST `{text}` comes from the `Stop` hook and is pushed to attached clients. |
 | `POST /api/agents/open-window` | Open another orchestrator `--app` window. |
-| `GET·PUT /api/settings` | `{ skipPermissions }`. |
+| `GET·PUT /api/settings` | `{ permissionMode: "default"\|"auto"\|"acceptEdits"\|"bypass" }` (legacy `skipPermissions` still accepted/mirrored). |
 | **WS** `/api/agents/term?project=…` *or* `?agent=id` | Spawn/attach a PTY and bridge it to xterm.js. |
 
 ## Notes

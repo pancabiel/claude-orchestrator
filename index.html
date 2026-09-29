@@ -3,7 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- A UI já é escura. Sem isto, o Dark Reader (e afins) reescreve as cores e
+         achata tudo em cinza — inclusive as bolinhas de cor dos projetos. -->
+    <meta name="darkreader-lock" />
+    <meta name="color-scheme" content="dark" />
     <title>Orquestrador de Agentes</title>
+    <script>
+      // Em telas pequenas com toque (celular), vai direto para a versão mobile.
+      // Acrescente ?desktop à URL para forçar a versão completa.
+      try {
+        if (!new URLSearchParams(location.search).has("desktop") &&
+            window.matchMedia("(max-width: 820px)").matches && "ontouchstart" in window) {
+          location.replace("/m");
+        }
+      } catch (e) {}
+    </script>
     <link rel="icon" href="/icon.png" type="image/png" />
     <link rel="alternate icon" href="/icon.ico" type="image/x-icon" />
     <link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css" />
